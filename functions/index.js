@@ -4,15 +4,29 @@ export async function onRequest(context) {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // 从环境变量读取密码（请在 Pages 项目设置中配置）
     const ADMIN_PASSWORD = env.ADMIN_PASSWORD || 'your_secure_password_here';
 
+    // ---------- KV 操作（带错误处理） ----------
     async function getContent() {
-        return (await env.REALNAME_STORE.get('content', 'text')) || '';
-    }
-    async function saveContent(text) {
-        await env.REALNAME_STORE.put('content', text);
+        try {
+            return (await env.REALNAME_STORE.get('content', 'text')) || '';
+        } catch (e) {
+            console.error('KV 读取失败:', e);
+            return ''; // 返回空字符串，避免页面崩溃
+        }
     }
 
+    async function saveContent(text) {
+        try {
+            await env.REALNAME_STORE.put('content', text);
+        } catch (e) {
+            console.error('KV 写入失败:', e);
+            throw new Error('存储失败，请检查 KV 绑定');
+        }
+    }
+
+    // ---------- 渲染函数 ----------
     function renderView(content) {
         return `<!DOCTYPE html>
 <html>
@@ -78,14 +92,17 @@ export async function onRequest(context) {
 </html>`;
     }
 
-    if (path === '/' || path === '/view') {
+    // ---------- 路由处理（已修复尾部斜杠问题） ----------
+    // 根路径 / 或 /view（及带斜杠的版本）
+    if (path === '/' || path === '/view' || path === '/view/') {
         const content = await getContent();
         return new Response(renderView(content || '暂无实名信息，请联系管理员。'), {
             headers: { 'Content-Type': 'text/html; charset=utf-8' }
         });
     }
 
-    if (path === '/admin') {
+    // 管理路径 /admin 或 /admin/
+    if (path === '/admin' || path === '/admin/') {
         if (request.method === 'GET') {
             const current = await getContent();
             return new Response(renderAdmin(current, ''), {
@@ -117,5 +134,7 @@ export async function onRequest(context) {
 </html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
     }
+
+    // 其他路径返回 404
     return new Response('Not Found', { status: 404 });
 }
